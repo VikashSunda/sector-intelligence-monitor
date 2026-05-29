@@ -1,0 +1,40 @@
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.streamlit/secrets.toml
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+
+# ── Raw downloaded PDFs (large, ephemeral — never commit) ─────────────────────
+*.pdf
+/tmp/
+data/pdfs/
+data/raw/
+
+# ── Database ──────────────────────────────────────────────────────────────────
+# NOTE: data/sector_intel.db is intentionally NOT ignored.
+# The pre-populated database is committed to the repo for Streamlit Cloud deployment.
+# Only ignore partial/dev databases:
+data/sector_intel_dev.db
+data/sector_intel_test.db
+data/sector_intel_phase*.db
+
+# ── IDE / OS ──────────────────────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+Thumbs.db

@@ -1,0 +1,3 @@
+# packages.txt — system-level dependencies for Streamlit Cloud
+# Required for PyMuPDF (fitz) PDF parsing
+libmupdf-dev

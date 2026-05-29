@@ -1,0 +1,2 @@
+# data directory — SQLite database lives here
+# sector_intel.db is committed to the repo after seed.py runs
