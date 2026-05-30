@@ -123,12 +123,12 @@ SECTOR_CONFIG = {
     "indian_defence": {
         "label": "🛡️ Indian Defence",
         "accent": "#f59e0b",
-        "available": False,
+        "available": True,
     },
     "us_biotech": {
         "label": "🧬 US Biotech",
         "accent": "#10b981",
-        "available": False,
+        "available": True,
     },
 }
 
