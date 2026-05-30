@@ -2,7 +2,7 @@
 
 Early-stage investing signals extracted automatically from public company filings.
 
-**Live demo:** [Streamlit Cloud URL]  
+**Live demo:** https://sector-intelligence-monitor.onrender.com/  
 **Loom demo:** [Loom URL]  
 **GitHub:** [repo URL]
 
