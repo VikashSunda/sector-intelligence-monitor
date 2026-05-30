@@ -1,9 +1,11 @@
 """
-Historical backfill from Screener.in — Paytm (INR Crore).
+Historical backfill from Screener.in — generic, any company with a screener slug.
 
-Scraped from: https://www.screener.in/company/PAYTM/consolidated/
+Originally written for Paytm; generalised to support any BSE-listed company.
+
+Scraped from: https://www.screener.in/company/<SLUG>/consolidated/
 Section: Quarterly Results
-Data confirmed: 2026-05-29
+Data confirmed: 2026-05-29 (Paytm), 2026-05-30 (Bajaj Finance)
 
 Screener uses calendar quarters (Mar/Jun/Sep/Dec ending).
 Mapping to Indian Fiscal Year quarters:
@@ -83,11 +85,19 @@ HEADERS = {
 
 # Row label → (metric_name, unit, direction)
 ROW_MAP = {
+    # Standard non-financial P&L
     "Sales":            ("revenue_crore",          "INR Cr", "up"),
     "Operating Profit": ("operating_profit_crore",  "INR Cr", "up"),
     "OPM %":            ("opm_pct",                "%",      "up"),
     "Net Profit":       ("net_profit_crore",        "INR Cr", "up"),
     "EPS in Rs":        ("eps_inr",                "INR",    "up"),
+    
+    # Financial / NBFC P&L (e.g. Bajaj Finance)
+    "Revenue":          ("revenue_crore",          "INR Cr", "up"),
+    "Financing Profit": ("operating_profit_crore",  "INR Cr", "up"),
+    "Financing Margin %":("opm_pct",               "%",      "up"),
+    "Gross NPA %":      ("gross_npa_pct",          "%",      "down"),
+    "Net NPA %":        ("net_npa_pct",            "%",      "down"),
 }
 
 # Normalise row label for matching
@@ -188,6 +198,10 @@ def backfill_paytm_historical(
     """
     Fetch Screener.in quarterly data and write missing periods to the metrics table.
 
+    Idempotency: checks for the existence of the `revenue_crore` metric specifically
+    (not any metric) so that quarters which already have LLM-extracted USD metrics
+    will still receive their Screener INR P&L data.
+
     Args:
         company_id: Target company
         dry_run:    If True, print what would be written but don't write
@@ -201,24 +215,32 @@ def backfill_paytm_historical(
     scraped = fetch_screener_quarterly()
     logger.info(f"  Scraped {len(scraped)} quarters from Screener.in")
 
-    # What periods already have data?
+    # Which periods already have Screener P&L data?
+    # We check for `revenue_crore` specifically — not just any metric — so that
+    # quarters already containing LLM-extracted USD metrics (e.g. gmv_mn_usd) will
+    # still receive their Screener INR rows without being skipped.
     existing_df = get_metrics_dataframe(company_id)
-    existing_periods = set(existing_df["period"].unique()) if not existing_df.empty else set()
-    logger.info(f"  Existing periods in DB: {sorted(existing_periods)}")
+    if not existing_df.empty:
+        screener_populated = set(
+            existing_df[existing_df["metric_name"] == "revenue_crore"]["period"].unique()
+        )
+    else:
+        screener_populated = set()
+    logger.info(f"  Periods already having revenue_crore: {sorted(screener_populated)}")
 
     summary = {
         "periods_found": sorted(scraped.keys()),
         "periods_new": [],
-        "periods_existing": sorted(existing_periods),
+        "periods_existing": sorted(screener_populated),
         "metrics_written": 0,
         "skipped": 0,
     }
 
     for period, metrics in sorted(scraped.items()):
-        is_new = period not in existing_periods
+        is_new = period not in screener_populated
         if not is_new:
             summary["skipped"] += 1
-            logger.info(f"  SKIP {period} — already in DB")
+            logger.info(f"  SKIP {period} — revenue_crore already present")
             continue
 
         summary["periods_new"].append(period)
@@ -242,6 +264,85 @@ def backfill_paytm_historical(
     return summary
 
 
+def backfill_company_historical(
+    company_id: str,
+    screener_slug: str,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Generic Screener.in backfill for any company.
+
+    Builds the Screener URL from screener_slug (e.g. 'BAJFINANCE'), scrapes
+    the quarterly results table, and writes missing INR P&L metrics to the DB.
+
+    Idempotency: skips periods that already have `revenue_crore` so it is safe
+    to run on companies that also have LLM-extracted USD metrics.
+
+    Args:
+        company_id:     DB company slug, e.g. 'bajaj_finance'
+        screener_slug:  Screener.in ticker slug, e.g. 'BAJFINANCE'
+        dry_run:        If True, log what would be written without writing.
+
+    Returns:
+        Summary dict: periods_found, periods_new, metrics_written, skipped
+    """
+    from pipeline.database import upsert_metric, get_metrics_dataframe
+
+    url = f"https://www.screener.in/company/{screener_slug}/consolidated/"
+    logger.info(f"Fetching Screener.in quarterly data for {company_id} ({screener_slug})...")
+    scraped = fetch_screener_quarterly(url)
+    
+    if not scraped:
+        logger.info(f"  No consolidated data found for {screener_slug}. Trying standalone...")
+        url = f"https://www.screener.in/company/{screener_slug}/"
+        scraped = fetch_screener_quarterly(url)
+
+    logger.info(f"  Scraped {len(scraped)} quarters from Screener.in")
+
+    existing_df = get_metrics_dataframe(company_id)
+    if not existing_df.empty:
+        screener_populated = set(
+            existing_df[existing_df["metric_name"] == "revenue_crore"]["period"].unique()
+        )
+    else:
+        screener_populated = set()
+    logger.info(f"  Periods already having revenue_crore: {sorted(screener_populated)}")
+
+    summary = {
+        "periods_found":    sorted(scraped.keys()),
+        "periods_new":      [],
+        "periods_existing": sorted(screener_populated),
+        "metrics_written":  0,
+        "skipped":          0,
+    }
+
+    for period, metrics in sorted(scraped.items()):
+        if period in screener_populated:
+            summary["skipped"] += 1
+            logger.info(f"  SKIP {period} — revenue_crore already present")
+            continue
+
+        summary["periods_new"].append(period)
+        for metric_name, (value, unit, direction) in metrics.items():
+            if dry_run:
+                logger.info(f"  [DRY] {period} {metric_name} = {value} {unit}")
+            else:
+                upsert_metric(
+                    company_id=company_id,
+                    period=period,
+                    metric_name=metric_name,
+                    metric_value=value,
+                    unit=unit,
+                    direction=direction,
+                    source_doc_id=None,
+                    validated=0,
+                )
+                summary["metrics_written"] += 1
+                logger.info(f"  WRITE {period} {metric_name} = {value} {unit}")
+
+    return summary
+
+
 if __name__ == "__main__":
     import sys
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -249,10 +350,13 @@ if __name__ == "__main__":
     os.environ.setdefault("DATABASE_PATH", "data/sector_intel.db")
 
     dry = "--dry-run" in sys.argv
+    slug = next((a for a in sys.argv[1:] if not a.startswith("--")), "PAYTM")
+    cid  = next((a.split("=")[1] for a in sys.argv[1:] if a.startswith("--company=")), slug.lower())
+
     from pipeline.database import init_db
     init_db()
-    result = backfill_paytm_historical(dry_run=dry)
-    print(f"\nScraped periods: {result['periods_found']}")
-    print(f"New periods: {result['periods_new']}")
-    print(f"Metrics written: {result['metrics_written']}")
-    print(f"Periods skipped (already in DB): {result['skipped']}")
+    result = backfill_company_historical(cid, slug, dry_run=dry)
+    print(f"\nPeriods scraped:  {result['periods_found']}")
+    print(f"New periods:      {result['periods_new']}")
+    print(f"Metrics written:  {result['metrics_written']}")
+    print(f"Periods skipped:  {result['skipped']}")

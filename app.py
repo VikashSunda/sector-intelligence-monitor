@@ -9,6 +9,8 @@ Phase 1 skeleton:
 """
 
 import logging
+import os
+import time
 from collections import defaultdict
 
 import pandas as pd
@@ -211,63 +213,100 @@ def _quarter_sort_key(period: str) -> tuple:
 
 
 def _seed_demo_if_empty():
-    """Seed realistic Paytm demo data on first run (empty DB)."""
+    """Seed realistic demo data on first run (empty DB)."""
     from pipeline.database import (
         get_companies_by_sector, insert_company, upsert_metric,
         insert_document, update_document_status, insert_synthesis,
     )
-    if get_companies_by_sector("indian_fintech"):
-        return  # already seeded
-    insert_company("paytm", "Paytm (One97 Comm.)", "indian_fintech", "PAYTM", "BSE", "https://ir.paytm.com")
-    quarters = {
-        "Q3FY24": {"gmv_mn_usd":4700,"revenue_mn_usd":1200,"monthly_transacting_users_mn":10.0,"devices_deployed_mn":0.87,"ebitda_before_esop_mn_usd":-15,"contribution_profit_mn_usd":125,"contribution_margin_pct":52,"merchant_subscriptions_mn":10.8},
-        "Q4FY24": {"gmv_mn_usd":4900,"revenue_mn_usd":1100,"monthly_transacting_users_mn":9.7, "devices_deployed_mn":0.99,"ebitda_before_esop_mn_usd":-10,"contribution_profit_mn_usd":130,"contribution_margin_pct":55,"merchant_subscriptions_mn":11.2},
-        "Q1FY25": {"gmv_mn_usd":4100,"revenue_mn_usd":850, "monthly_transacting_users_mn":7.8, "devices_deployed_mn":0.99,"ebitda_before_esop_mn_usd":-40,"contribution_profit_mn_usd":75, "contribution_margin_pct":45,"merchant_subscriptions_mn":10.0},
-        "Q3FY25": {"gmv_mn_usd":5200,"revenue_mn_usd":760, "monthly_transacting_users_mn":10.8,"devices_deployed_mn":1.12,"ebitda_before_esop_mn_usd": 24,"contribution_profit_mn_usd":200,"contribution_margin_pct":63,"merchant_subscriptions_mn":11.8},
-        "Q4FY25": {"gmv_mn_usd":5800,"revenue_mn_usd":820, "monthly_transacting_users_mn":11.5,"devices_deployed_mn":1.25,"ebitda_before_esop_mn_usd": 45,"contribution_profit_mn_usd":235,"contribution_margin_pct":67,"merchant_subscriptions_mn":12.3},
-    }
-    for period, metrics in quarters.items():
-        for k, v in metrics.items():
-            upsert_metric("paytm", period, k, v)
-    urls = [
-        ("https://paytm.com/document/ir/financial-results/fy2024-25/Paytm-Earnings-Presentation_May-2025_USD.pdf",        "investor_presentation", "Q4FY25"),
-        ("https://paytm.com/document/ir/financial-results/fy2024-25/Paytm-Earnings-Presentation_Jan-2025_USD_Final.pdf",  "investor_presentation", "Q3FY25"),
-        ("https://paytm.com/document/ir/financial-results/fy2024-25/Earnings-Presentation_USD_Q1_FY25.pdf",               "investor_presentation", "Q1FY25"),
-        ("https://paytm.com/document/ir/financial-results/Earnings-Presentation_INR_FY24-Q4.pdf",                         "investor_presentation", "Q4FY24"),
-        ("https://paytm.com/document/ir/financial-results/Paytm_Q3_FY_2024-Earnings-Presentation_INR.pdf",                "investor_presentation", "Q3FY24"),
-    ]
-    for url, dtype, period in urls:
-        doc_id = insert_document("paytm", url, dtype, period)
-        update_document_status(doc_id, "indexed")  # URL known; not downloaded in demo mode
-    insert_synthesis(
-        sector="indian_fintech:paytm",
-        period_range="Q3FY24 to Q4FY25",
-        synthesis_text=(
-            "Paytm's GMV recovery is the defining trend of FY25: after dropping to $4.1B in Q1FY25 "
-            "following the PPBL disruption, GMV rebounded to $5.8B by Q4FY25 — surpassing pre-disruption levels. "
-            "The structural story is margin expansion: contribution margin improved from 45% in Q1FY25 to 67% "
-            "in Q4FY25, while EBITDA turned positive at +$45M vs -$40M at the trough. This was achieved by "
-            "pruning low-margin flows and focusing on high-value merchant transactions. Monthly Transacting "
-            "Users recovered to 11.5M from the trough of 7.8M. Device deployments (Soundboxes) crossed 1.25M "
-            "— the physical payments layer is growing, suggesting merchant stickiness to the hardware "
-            "subscription model. Revenue is structurally lower ($820M vs $1.2B peak) as Paytm exited "
-            "lending distribution — but EBITDA quality is markedly better."
-        ),
-        investing_lens_text=(
-            "Paytm's trajectory reveals clear signals for early-stage investors: "
-            "(1) DEVICE-LED B2B FINTECH: Soundbox growth to 1.25M validates hardware-as-a-service in merchant "
-            "payments. Startups building vertical SaaS on payment terminals (inventory, credit, analytics) have "
-            "a real monetisation surface. "
-            "(2) MERCHANT CREDIT WHITE SPACE: Paytm has exited merchant lending — creating opportunity for "
-            "embedded lending startups targeting the 12M+ merchant subscriber base. "
-            "(3) MTU BENCHMARK: At 11.5M MTU and $820M revenue, Paytm earns ~$71/MTU annually. Target >=50 "
-            "for comparable unit economics at early stage. "
-            "(4) CONTRIBUTION MARGIN FLOOR: 60%+ contribution margins are achievable at scale — use this as "
-            "the steady-state target, not raw revenue growth. "
-            "(5) REGULATORY RESILIENCE: Post-PPBL recovery shows core payment rails (UPI, soundboxes, "
-            "merchant subscriptions) are robust to disruptions of adjacent business lines."
-        ),
-    )
+    existing_companies = {c["id"] for c in get_companies_by_sector("indian_fintech")}
+    
+    if "paytm" not in existing_companies:
+        insert_company("paytm", "Paytm (One97 Comm.)", "indian_fintech", "PAYTM", "BSE", "https://ir.paytm.com")
+        quarters = {
+            "Q3FY24": {"gmv_mn_usd":4700,"revenue_mn_usd":1200,"monthly_transacting_users_mn":10.0,"devices_deployed_mn":0.87,"ebitda_before_esop_mn_usd":-15,"contribution_profit_mn_usd":125,"contribution_margin_pct":52,"merchant_subscriptions_mn":10.8},
+            "Q4FY24": {"gmv_mn_usd":4900,"revenue_mn_usd":1100,"monthly_transacting_users_mn":9.7, "devices_deployed_mn":0.99,"ebitda_before_esop_mn_usd":-10,"contribution_profit_mn_usd":130,"contribution_margin_pct":55,"merchant_subscriptions_mn":11.2},
+            "Q1FY25": {"gmv_mn_usd":4100,"revenue_mn_usd":850, "monthly_transacting_users_mn":7.8, "devices_deployed_mn":0.99,"ebitda_before_esop_mn_usd":-40,"contribution_profit_mn_usd":75, "contribution_margin_pct":45,"merchant_subscriptions_mn":10.0},
+            "Q3FY25": {"gmv_mn_usd":5200,"revenue_mn_usd":760, "monthly_transacting_users_mn":10.8,"devices_deployed_mn":1.12,"ebitda_before_esop_mn_usd": 24,"contribution_profit_mn_usd":200,"contribution_margin_pct":63,"merchant_subscriptions_mn":11.8},
+            "Q4FY25": {"gmv_mn_usd":5800,"revenue_mn_usd":820, "monthly_transacting_users_mn":11.5,"devices_deployed_mn":1.25,"ebitda_before_esop_mn_usd": 45,"contribution_profit_mn_usd":235,"contribution_margin_pct":67,"merchant_subscriptions_mn":12.3},
+        }
+        for period, metrics in quarters.items():
+            for k, v in metrics.items():
+                upsert_metric("paytm", period, k, v, validated=1)
+        urls = [
+            ("https://paytm.com/document/ir/financial-results/fy2024-25/Paytm-Earnings-Presentation_May-2025_USD.pdf",        "investor_presentation", "Q4FY25"),
+            ("https://paytm.com/document/ir/financial-results/fy2024-25/Paytm-Earnings-Presentation_Jan-2025_USD_Final.pdf",  "investor_presentation", "Q3FY25"),
+            ("https://paytm.com/document/ir/financial-results/fy2024-25/Earnings-Presentation_USD_Q1_FY25.pdf",               "investor_presentation", "Q1FY25"),
+            ("https://paytm.com/document/ir/financial-results/Earnings-Presentation_INR_FY24-Q4.pdf",                         "investor_presentation", "Q4FY24"),
+            ("https://paytm.com/document/ir/financial-results/Paytm_Q3_FY_2024-Earnings-Presentation_INR.pdf",                "investor_presentation", "Q3FY24"),
+        ]
+        for url, dtype, period in urls:
+            doc_id = insert_document("paytm", url, dtype, period)
+            update_document_status(doc_id, "indexed")  # URL known; not downloaded in demo mode
+        insert_synthesis(
+            sector="indian_fintech:paytm",
+            period_range="Q3FY24 to Q4FY25",
+            synthesis_text=(
+                "Paytm's GMV recovery is the defining trend of FY25: after dropping to $4.1B in Q1FY25 "
+                "following the PPBL disruption, GMV rebounded to $5.8B by Q4FY25 — surpassing pre-disruption levels. "
+                "The structural story is margin expansion: contribution margin improved from 45% in Q1FY25 to 67% "
+                "in Q4FY25, while EBITDA turned positive at +$45M vs -$40M at the trough. This was achieved by "
+                "pruning low-margin flows and focusing on high-value merchant transactions. Monthly Transacting "
+                "Users recovered to 11.5M from the trough of 7.8M. Device deployments (Soundboxes) crossed 1.25M "
+                "— the physical payments layer is growing, suggesting merchant stickiness to the hardware "
+                "subscription model. Revenue is structurally lower ($820M vs $1.2B peak) as Paytm exited "
+                "lending distribution — but EBITDA quality is markedly better."
+            ),
+            investing_lens_text=(
+                "Paytm's trajectory reveals clear signals for early-stage investors: "
+                "(1) DEVICE-LED B2B FINTECH: Soundbox growth to 1.25M validates hardware-as-a-service in merchant "
+                "payments. Startups building vertical SaaS on payment terminals (inventory, credit, analytics) have "
+                "a real monetisation surface. "
+                "(2) MERCHANT CREDIT WHITE SPACE: Paytm has exited merchant lending — creating opportunity for "
+                "embedded lending startups targeting the 12M+ merchant subscriber base. "
+                "(3) MTU BENCHMARK: At 11.5M MTU and $820M revenue, Paytm earns ~$71/MTU annually. Target >=50 "
+                "for comparable unit economics at early stage. "
+                "(4) CONTRIBUTION MARGIN FLOOR: 60%+ contribution margins are achievable at scale — use this as "
+                "the steady-state target, not raw revenue growth. "
+                "(5) REGULATORY RESILIENCE: Post-PPBL recovery shows core payment rails (UPI, soundboxes, "
+                "merchant subscriptions) are robust to disruptions of adjacent business lines."
+            ),
+        )
+
+    if "bajaj_finance" not in existing_companies:
+        insert_company("bajaj_finance", "Bajaj Finance", "indian_fintech", "BAJFINANCE", "BSE", "https://www.bajajfinserv.in/finance-investor-relation")
+        insert_synthesis(
+            sector="indian_fintech:bajaj_finance",
+            period_range="Historical",
+            synthesis_text="Bajaj Finance is a leading non-banking financial company in India. Currently tracking fundamental P&L metrics via Screener.in backfill.",
+            investing_lens_text="Strong retail lending franchise with consistent growth and profitability."
+        )
+
+    if "pb_fintech" not in existing_companies:
+        insert_company("pb_fintech", "PB Fintech", "indian_fintech", "POLICYBZR", "BSE", "https://investor.pbfintech.in/")
+        insert_synthesis(
+            sector="indian_fintech:pb_fintech",
+            period_range="Historical",
+            synthesis_text="PB Fintech operates Policybazaar and Paisabazaar. Currently tracking fundamental P&L metrics via Screener.in backfill.",
+            investing_lens_text="Dominant digital insurance aggregator with increasing operational leverage."
+        )
+
+    if "sbi_cards" not in existing_companies:
+        insert_company("sbi_cards", "SBI Cards", "indian_fintech", "SBICARD", "BSE", "https://www.sbicard.com/en/our-company/investor-relations.page")
+        insert_synthesis(
+            sector="indian_fintech:sbi_cards",
+            period_range="Historical",
+            synthesis_text="SBI Cards is a leading credit card issuer in India. Currently tracking fundamental P&L and asset quality metrics via Screener.in backfill.",
+            investing_lens_text="Pure-play credit card issuer backed by India's largest bank, highly levered to consumer spending."
+        )
+
+    if "creditaccess" not in existing_companies:
+        insert_company("creditaccess", "CreditAccess Grameen", "indian_fintech", "CREDITACC", "BSE", "https://www.creditaccessgrameen.in/investors/")
+        insert_synthesis(
+            sector="indian_fintech:creditaccess",
+            period_range="Historical",
+            synthesis_text="CreditAccess Grameen is India's largest microfinance institution. Currently tracking fundamental P&L and asset quality metrics via Screener.in backfill.",
+            investing_lens_text="Microfinance leader with rural focus, demonstrating robust asset quality and scale."
+        )
 
 
 if DB_READY:
@@ -407,6 +446,26 @@ with tab_metrics:
 
     latest = _get_latest_metrics(selected_company_id)
 
+    # ── Coverage note (Rec 2) ─────────────────────────────────────────────────
+    _screener_metrics = {"revenue_crore", "operating_profit_crore", "opm_pct", "net_profit_crore", "eps_inr"}
+    _has_screener = not df[df["metric_name"].isin(_screener_metrics)].empty
+    _has_llm = "validated" in df.columns and (df["validated"] == 1).any()
+    if _has_screener and _has_llm:
+        st.info(
+            "**Data Coverage** — P&L metrics (INR Cr) cover all 13 quarters "
+            "(Q4FY23 – Q4FY26) via **Screener.in** backfill. "
+            "Operational & payments metrics (USD) cover 5 key quarters "
+            "(Q3FY24 – Q4FY25) extracted via **LLM** from investor presentations. "
+            "Charts show source: ● Filing / LLM   ○ Screener.in",
+            icon="ℹ️",
+        )
+    elif _has_screener:
+        st.info(
+            "**Data Coverage** — Metrics sourced from Screener.in (INR Cr, 13 quarters). "
+            "Run the pipeline with an API key to add LLM-extracted operational data.",
+            icon="ℹ️",
+        )
+
     # ── KPI summary row ───────────────────────────────────────────────────────
     kpi_order = [
         "aum_crore", "gross_npa_pct", "net_interest_margin_pct",
@@ -456,13 +515,61 @@ with tab_metrics:
                 label = METRIC_LABELS.get(metric, metric.replace("_"," ").title())
                 unit  = m_df["unit"].iloc[0] if not m_df.empty and "unit" in m_df.columns else ""
                 color = COLORS[j % len(COLORS)]
-                fig = go.Figure(go.Scatter(
-                    x=m_df["period"], y=m_df["metric_value"],
-                    mode="lines+markers",
-                    line=dict(color=color, width=2.5),
-                    marker=dict(size=7, color=color),
-                    hovertemplate=f"<b>{label}</b><br>%{{x}}: %{{y:.2f}} {unit}<extra></extra>",
-                ))
+
+                # ── Rec 3: split by data source for distinct marker styles ──
+                has_validated_col = "validated" in m_df.columns
+                filing_df  = m_df[m_df["validated"] == 1] if has_validated_col else m_df.iloc[0:0]
+                scraper_df = m_df[m_df["validated"] == 0] if has_validated_col else m_df
+
+                fig = go.Figure()
+
+                # LLM / Filing points — filled circles
+                if not filing_df.empty:
+                    fig.add_trace(go.Scatter(
+                        x=filing_df["period"], y=filing_df["metric_value"],
+                        mode="lines+markers",
+                        name="Filing / LLM",
+                        line=dict(color=color, width=2.5),
+                        marker=dict(size=8, color=color, symbol="circle"),
+                        hovertemplate=(
+                            f"<b>{label}</b><br>%{{x}}: %{{y:.2f}} {unit}"
+                            "<br><i>Source: Investor Presentation</i><extra></extra>"
+                        ),
+                    ))
+
+                # Screener points — open circles, dashed line
+                if not scraper_df.empty:
+                    fig.add_trace(go.Scatter(
+                        x=scraper_df["period"], y=scraper_df["metric_value"],
+                        mode="lines+markers",
+                        name="Screener.in",
+                        line=dict(color=color, width=2, dash="dot"),
+                        marker=dict(size=8, color="rgba(0,0,0,0)",
+                                    symbol="circle", line=dict(color=color, width=2)),
+                        hovertemplate=(
+                            f"<b>{label}</b><br>%{{x}}: %{{y:.2f}} {unit}"
+                            "<br><i>Source: Screener.in</i><extra></extra>"
+                        ),
+                    ))
+
+                # If only one source type exists, fall back to simple solid line
+                if filing_df.empty or scraper_df.empty:
+                    fig = go.Figure(go.Scatter(
+                        x=m_df["period"], y=m_df["metric_value"],
+                        mode="lines+markers",
+                        line=dict(color=color, width=2.5),
+                        marker=dict(
+                            size=8, color=color if not scraper_df.empty else color,
+                            symbol="circle",
+                            line=dict(color=color, width=2) if filing_df.empty else dict(width=0),
+                        ),
+                        hovertemplate=(
+                            f"<b>{label}</b><br>%{{x}}: %{{y:.2f}} {unit}"
+                            + ("<br><i>Source: Screener.in</i>" if filing_df.empty else "<br><i>Source: Investor Presentation</i>")
+                            + "<extra></extra>"
+                        ),
+                    ))
+
                 fig.update_layout(
                     title=label, height=260,
                     paper_bgcolor="rgba(0,0,0,0)",
@@ -473,9 +580,11 @@ with tab_metrics:
                     xaxis=dict(gridcolor="#1e293b",tickangle=-30,showgrid=True),
                     yaxis=dict(gridcolor="#1e293b",showgrid=True),
                     hovermode="x unified",
-                    showlegend=False,
+                    showlegend=has_validated_col and not filing_df.empty and not scraper_df.empty,
+                    legend=dict(orientation="h", y=1.15, x=0, font=dict(size=10)),
                 )
                 st.plotly_chart(fig, use_container_width=True, key=f"chart_metrics_{group_name}_{j}_{metric}")
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -521,7 +630,11 @@ with tab_documents:
     docs = _get_documents(selected_company_id)
 
     if not docs:
-        st.info("No source documents fetched yet for this company.", icon="📄")
+        st.info(
+            "No investor presentations or transcripts have been indexed for this company yet. "
+            "Historical metrics are currently sourced from Screener.in backfill.",
+            icon="📄",
+        )
     else:
         st.caption(f"{len(docs)} document(s) indexed")
 
@@ -601,40 +714,111 @@ with tab_pipeline:
     st.markdown("---")
     if st.button("Run Full Pipeline", type="primary", use_container_width=True, key="pip_run"):
         if api_key:
-            key_var = "ANTHROPIC_API_KEY" if provider == "claude" else "GEMINI_API_KEY"
-            os.environ[key_var] = api_key
+            if provider == "claude":
+                os.environ["ANTHROPIC_API_KEY"] = api_key
+            elif provider == "gemini":
+                os.environ["GEMINI_API_KEY"] = api_key
+                os.environ["GOOGLE_API_KEY"] = api_key
+            elif provider == "openai":
+                os.environ["OPENAI_API_KEY"] = api_key
+
+        has_llm_key = bool(
+            os.getenv("ANTHROPIC_API_KEY") or
+            os.getenv("GEMINI_API_KEY") or
+            os.getenv("GOOGLE_API_KEY") or
+            os.getenv("OPENAI_API_KEY")
+        )
+
         with st.status("Running pipeline...", expanded=True) as pip_status:
+            errors = []
+            docs_checked = 0
+            new_docs_found = 0
+            start_time = time.time()
             try:
                 st.write("Step 1-2: Fetching + downloading Paytm documents...")
                 from pipeline.ingestion.paytm_fetcher import PaytmFetcher
-                fr = PaytmFetcher(company_id=selected_company_id).fetch_paytm_documents(download_pdfs=True)
-                st.write(f"  Discovered: {fr.documents_discovered} | New: {fr.new_documents} | DL: {fr.downloads_completed}")
+                fetcher = PaytmFetcher()
+                fr = fetcher.run(download_pdfs=True)
+                docs_checked = fr.discovered
+                new_docs_found = fr.new_documents
+                st.write(f"  Discovered: {fr.discovered} | New: {fr.new_documents} | DL: {fr.downloaded}")
 
                 st.write("Step 3: Parsing PDFs...")
                 from pipeline.ingestion.pdf_parser import parse_all_pending
                 pr = parse_all_pending(selected_company_id)
                 st.write(f"  Parsed: {len(pr)} docs | Chunks: {sum(r.chunks_extracted for r in pr)}")
 
-                st.write(f"Step 4: Extracting metrics ({provider}/{model})...")
-                from pipeline.extraction.metrics_extractor import extract_all_parsed
-                er = extract_all_parsed(selected_company_id, provider=provider, model=model)
-                new_ex = [r for r in er if r.success and not r.was_cached]
-                st.write(f"  Extracted: {len(new_ex)} new | Cached: {sum(1 for r in er if r.was_cached)}")
-
-                st.write("Step 5: Generating synthesis...")
-                from pipeline.synthesis.synthesizer import synthesize_company
-                sr = synthesize_company(selected_company_id, company_name=company_name,
-                                        sector=selected_sector, provider=provider, model=model)
-                if sr.success:
-                    st.write(f"  Synthesis generated ({len(sr.synthesis_text)} chars)")
+                st.write("Screener Backfill: Scraping historical P&L...")
+                from pipeline.ingestion.screener_backfill import backfill_paytm_historical
+                backfill_res = backfill_paytm_historical(company_id=selected_company_id)
+                if backfill_res["periods_new"]:
+                    st.write(f"  Screener backfill: +{len(backfill_res['periods_new'])} periods")
                 else:
-                    st.write(f"  Synthesis skipped: {sr.error}")
+                    st.write("  Screener backfill: No new periods found")
+
+                if has_llm_key:
+                    st.write(f"Step 4: Extracting metrics ({provider}/{model})...")
+                    from pipeline.extraction.metrics_extractor import extract_all_parsed
+                    er = extract_all_parsed(selected_company_id, provider=provider, model=model)
+                    new_ex = [r for r in er if r.success and not r.was_cached]
+                    st.write(f"  Extracted: {len(new_ex)} new | Cached: {sum(1 for r in er if r.was_cached)}")
+                    for r in er:
+                        if not r.success and r.error:
+                            errors.append(f"Extraction error: {r.error}")
+                else:
+                    st.warning("⚠️ Step 4: Extracting metrics skipped (no API key set)")
+                    st.write("  Step 4: SKIPPED (no LLM API key set)")
+
+                if has_llm_key:
+                    st.write("Step 5: Generating synthesis...")
+                    from pipeline.synthesis.synthesizer import synthesize_company
+                    sr = synthesize_company(selected_company_id, company_name=company_name,
+                                            sector=selected_sector, provider=provider, model=model)
+                    if sr.success:
+                        st.write(f"  Synthesis generated ({len(sr.synthesis_text)} chars)")
+                    else:
+                        st.write(f"  Synthesis skipped: {sr.error}")
+                        errors.append(f"Synthesis skipped: {sr.error}")
+                else:
+                    st.warning("⚠️ Step 5: Generating synthesis skipped (no API key set)")
+                    st.write("  Step 5: SKIPPED (no LLM API key set)")
+
+                duration = round(time.time() - start_time, 2)
+                from pipeline.database import log_refresh
+                log_refresh(
+                    sector=selected_sector,
+                    docs_checked=docs_checked,
+                    new_docs_found=new_docs_found,
+                    errors=errors,
+                    duration_seconds=duration,
+                )
 
                 st.cache_data.clear()
-                pip_status.update(label="Pipeline complete!", state="complete")
-                st.success("Done. Switch to Metrics or Synthesis tabs to see results.")
+                
+                if not has_llm_key:
+                    pip_status.update(label="Pipeline complete (partial)", state="complete")
+                    st.warning("Pipeline completed partially. LLM steps were skipped due to missing API keys.")
+                else:
+                    pip_status.update(label="Pipeline complete!", state="complete")
+                    st.success("Done. Switch to Metrics or Synthesis tabs to see results.")
+                
+                time.sleep(2)
                 st.rerun()
             except Exception as exc:
+                duration = round(time.time() - start_time, 2)
+                errors.append(str(exc))
+                try:
+                    from pipeline.database import log_refresh
+                    log_refresh(
+                        sector=selected_sector,
+                        docs_checked=docs_checked,
+                        new_docs_found=new_docs_found,
+                        errors=errors,
+                        duration_seconds=duration,
+                    )
+                except Exception as log_exc:
+                    pass
+                
                 pip_status.update(label="Error", state="error")
                 st.error(f"{exc}")
                 import traceback

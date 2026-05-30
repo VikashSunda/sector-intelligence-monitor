@@ -35,7 +35,31 @@ logger = logging.getLogger(__name__)
 # ── Sector → company config ───────────────────────────────────────────────────
 SECTOR_COMPANIES = {
     "indian_fintech": [
-        {"company_id": "paytm", "company_name": "Paytm (One97 Communications)"},
+        {
+            "company_id": "paytm",
+            "company_name": "Paytm (One97 Communications)",
+            "screener_slug": "PAYTM",
+        },
+        {
+            "company_id": "bajaj_finance",
+            "company_name": "Bajaj Finance",
+            "screener_slug": "BAJFINANCE",
+        },
+        {
+            "company_id": "pb_fintech",
+            "company_name": "PB Fintech",
+            "screener_slug": "POLICYBZR",
+        },
+        {
+            "company_id": "sbi_cards",
+            "company_name": "SBI Cards",
+            "screener_slug": "SBICARD",
+        },
+        {
+            "company_id": "creditaccess",
+            "company_name": "CreditAccess Grameen",
+            "screener_slug": "CREDITACC",
+        },
     ],
     # extensibility: add indian_defence, us_biotech here without redesign
 }
@@ -91,13 +115,14 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
         # ── Phase 2: Discover + download new documents ────────────────────────
         try:
             from pipeline.ingestion.paytm_fetcher import PaytmFetcher
-            fetcher = PaytmFetcher(company_id=cid)
-            fetch_result = fetcher.fetch_paytm_documents(download_pdfs=True)
-            docs_checked += fetch_result.documents_discovered
+            fetcher = PaytmFetcher()
+            fetch_result = fetcher.run(download_pdfs=True)
+            docs_checked += fetch_result.discovered
             new_docs_found += fetch_result.new_documents
             logger.info(
-                f"  [{cid}] Fetch: discovered={fetch_result.documents_discovered} "
-                f"new={fetch_result.new_documents} dl={fetch_result.downloads_completed}"
+                f"  [{cid}] Fetch: discovered={fetch_result.discovered} "
+                f"new={fetch_result.new_documents} dl={fetch_result.downloaded} "
+                f"bse={'OK' if fetch_result.bse_api_success else 'FALLBACK'}"
             )
         except Exception as exc:
             msg = f"[{cid}] Fetch error: {exc}"
@@ -139,9 +164,13 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
             logger.info(f"  [{cid}] Extract: SKIPPED (no LLM API key set)")
 
         # ── Screener backfill: fill missing historical quarters ───────────────
+        screener_slug = company.get("screener_slug", cid.upper())
         try:
-            from pipeline.ingestion.screener_backfill import backfill_paytm_historical
-            backfill = backfill_paytm_historical(company_id=cid)
+            from pipeline.ingestion.screener_backfill import backfill_company_historical
+            backfill = backfill_company_historical(
+                company_id=cid,
+                screener_slug=screener_slug,
+            )
             if backfill["periods_new"]:
                 logger.info(f"  [{cid}] Screener backfill: +{len(backfill['periods_new'])} periods")
         except Exception as exc:

@@ -5,16 +5,17 @@ Cleans common LLM output formatting artefacts before display in the dashboard.
 All rules are pure whitespace/dash normalisation — meaning is never altered.
 
 Patterns handled:
-  1.  "$4.1BinQ1FY25"  ->  "$4.1B in Q1FY25"      (unit + period glued)
-  2.  "+$45Mvs-$40M"  ->  "+$45M vs -$40M"         (vs comparison)
-  3.  "$820Mrevenue"   ->  "$820M revenue"           (unit + word glued)
-  4.  "45%inQ1FY25"   ->  "45% in Q1FY25"           (percent + word/period)
-  5.  "11.5Mfrom"     ->  "11.5M from"              (Mn/M/B/K + word)
-  6.  "Q1FY25following"-> "Q1FY25 following"         (period + word)
-  7.  "inQ1FY25"      ->  "in Q1FY25"               (word + period)
-  8.  "2,334Crrevenue"->  "2,334 Cr revenue"        (Crore amount)
-  9.  em-dash variants ->  " — "                    (–, --, isolated -)
-  10. double spaces    ->  single space
+  1.  "$4.1BinQ1FY25"   ->  "\$4.1B in Q1FY25"     (unit + period glued)
+  2.  "+$45Mvs-$40M"    ->  "+\$45M vs -\$40M"      (vs comparison)
+  3.  "$820Mrevenue"    ->  "\$820M revenue"          (unit + word glued)
+  4.  "45%inQ1FY25"     ->  "45% in Q1FY25"          (percent + word/period)
+  5.  "11.5Mfrom"       ->  "11.5M from"             (Mn/M/B/K + word)
+  6.  "Q1FY25following" ->  "Q1FY25 following"        (period + word)
+  7.  "inQ1FY25"        ->  "in Q1FY25"              (word + period)
+  8.  "2,334Crrevenue"  ->  "2,334 Cr revenue"       (Crore amount)
+  9.  em-dash variants  ->  " — "                   (en-dash, --, isolated -)
+  10. double spaces     ->  single space
+  11. $                 ->  \$                       (Streamlit LaTeX escape)
 """
 
 import re
@@ -34,59 +35,61 @@ _CONNECTOR = (
 
 def _rules(text: str) -> str:
 
-    # ── Rule 0 (priority): "Mn" two-char unit FIRST, before any M rules ─────
-    # "10.8Mn merchants" -> "10.8 Mn merchants"
-    # "4.5Mnfrom" -> "4.5 Mn from"
+    # Rule 0 (priority): "Mn" two-char unit FIRST, before any M rules
+    # "10.8Mnfrom" -> "10.8 Mn from"
     text = re.sub(r"(\d)(Mn)([A-Za-z])", r"\1 \2 \3", text)
 
-    # ── Rule 1: "vs" glued between values: "+$45Mvs-$40M" ───────────────────
-    # Before: digit-or-unit char, then "vs", then sign/digit/$
+    # Rule 1: "vs" glued between values: "+$45Mvs-$40M"
     text = re.sub(r"([0-9MBKCr%\+\-])vs([+\-\$0-9])", r"\1 vs \2", text)
 
-    # ── Rule 2: digit + unit + quarter glued: "4.1BinQ1FY25" ────────────────
-    # Use [MBKCr%] but NOT Mn (already handled above)
+    # Rule 2: digit + unit + quarter glued: "4.1BinQ1FY25"
     text = re.sub(
         r"(\d)([MBKCr%]+)\s*(" + _QTR + r")",
         r"\1\2 \3",
         text,
     )
 
-    # ── Rule 3: "Cr" and remaining multi-char units + word glued ────────────
+    # Rule 3: "Cr" + word glued
     text = re.sub(r"(\d)(Cr)([A-Za-z])", r"\1 \2 \3", text)
 
-    # ── Rule 4: Single-char unit + connector word: "$820Mrevenue" ────────────
+    # Rule 4: Single-char unit + connector word: "$820Mrevenue"
     text = re.sub(
         r"(\d)([MBK%])((?:" + _CONNECTOR + r")\b)",
         r"\1\2 \3",
         text,
     )
 
-    # ── Rule 5: Percent + word/period glued: "45%in" ─────────────────────────
+    # Rule 5: Percent + word/period glued: "45%in"
     text = re.sub(r"(\d%\+?)([A-Za-z])", r"\1 \2", text)
 
-    # ── Rule 6: Period + word glued: "Q1FY25following" ───────────────────────
+    # Rule 6: Period + word glued: "Q1FY25following"
     text = re.sub(r"(" + _QTR + r")([A-Za-z])", r"\1 \2", text)
 
-    # ── Rule 7: Word + period glued: "inQ1FY25" ──────────────────────────────
+    # Rule 7: Word + period glued: "inQ1FY25"
     text = re.sub(r"([a-z])(" + _QTR + r")", r"\1 \2", text)
 
-    # ── Rule 8: Single-char unit + any word: "11.5Mfrom" ────────────────────
+    # Rule 8: Single-char unit + any word: "11.5Mfrom"
     text = re.sub(r"(\d)([MBK])([A-Za-z])", r"\1\2 \3", text)
 
-    # ── Rule 9: Crore amounts: "2,334Crrevenue" ──────────────────────────────
+    # Rule 9: Crore amounts: "2,334Crrevenue"
     text = re.sub(r"([\d,]+)(Cr)([A-Za-z])", r"\1 \2 \3", text)
 
-    # ── Rule 10: Normalise dashes to em-dash ────────────────────────────────
+    # Rule 10: Normalise dashes to em-dash
     en = "\u2013"
     em = "\u2014"
     text = re.sub(r"\s*" + re.escape(en) + r"\s*", " \u2014 ", text)
     text = re.sub(r"\s*" + re.escape(em) + r"\s*", " \u2014 ", text)
     text = re.sub(r"\s+--\s+", " \u2014 ", text)
-    # Isolated single hyphen surrounded by spaces (not inside compound words)
     text = re.sub(r"(?<=[A-Za-z0-9])\s+-\s+(?=[A-Za-z0-9])", " \u2014 ", text)
 
-    # ── Rule 11: Collapse double+ spaces ─────────────────────────────────────
+    # Rule 11: Collapse double+ spaces
     text = re.sub(r"  +", " ", text)
+
+    # Rule 12: Escape $ for Streamlit st.markdown()
+    # Streamlit treats $...$ as LaTeX math delimiters — this strips spaces,
+    # concatenates all words between the pair, and duplicates the rendered text.
+    # Escaping every $ prevents this entirely.
+    text = text.replace("$", r"\$")
 
     return text.strip()
 
@@ -103,23 +106,24 @@ def clean_synthesis(text: str) -> str:
 
 
 # ── Test suite ────────────────────────────────────────────────────────────────
+# NOTE: All expected strings with $ use raw strings (r"...") because
+#       Rule 12 escapes every $ -> \$ before returning.
 
 _TESTS = [
-    # (raw_input, expected_output, label)
     (
         "GMV dropped to $4.1BinQ1FY25 following disruption",
-        "GMV dropped to $4.1B in Q1FY25 following disruption",
-        "unit+period glued",
+        r"GMV dropped to \$4.1B in Q1FY25 following disruption",
+        "unit+period glued + dollar escaped",
     ),
     (
         "EBITDA turned positive at +$45Mvs-$40M at the trough",
-        "EBITDA turned positive at +$45M vs -$40M at the trough",
-        "vs comparison glued",
+        r"EBITDA turned positive at +\$45M vs -\$40M at the trough",
+        "vs comparison glued + dollar escaped",
     ),
     (
         "Revenue is $820Mrevenue vs $1.2Bpeak",
-        "Revenue is $820M revenue vs $1.2B peak",
-        "unit+word glued",
+        r"Revenue is \$820M revenue vs \$1.2B peak",
+        "unit+word glued + dollar escaped",
     ),
     (
         "contribution margin improved from 45%in Q1FY25 to 67%in Q4FY25",
@@ -133,8 +137,8 @@ _TESTS = [
     ),
     (
         "GMV rebounded to $5.8Bby Q4FY25",
-        "GMV rebounded to $5.8B by Q4FY25",
-        "B+word glued",
+        r"GMV rebounded to \$5.8B by Q4FY25",
+        "B+word glued + dollar escaped",
     ),
     (
         "Q4FY25following the disruption",
@@ -159,7 +163,7 @@ _TESTS = [
     (
         "10.8Mnfrom the trough of 7.8M",
         "10.8 Mn from the trough of 7.8M",
-        "Mn+word glued (no space)",
+        "Mn+word glued",
     ),
     (
         "revenue of 2,334Crrevenue in FY24",
@@ -167,9 +171,19 @@ _TESTS = [
         "Crore amount",
     ),
     (
-        "Clean text with no issues at all.",
-        "Clean text with no issues at all.",
+        "Clean text with no dollar signs.",
+        "Clean text with no dollar signs.",
         "already clean — no change",
+    ),
+    (
+        "GMV dropped to $4.1B in Q1FY25 after disruption",
+        r"GMV dropped to \$4.1B in Q1FY25 after disruption",
+        "dollar sign — clean spacing, still escaped",
+    ),
+    (
+        "Revenue ($820M vs $1.2B peak) fell after exit",
+        r"Revenue (\$820M vs \$1.2B peak) fell after exit",
+        "multiple dollar signs in parentheses",
     ),
 ]
 
@@ -198,7 +212,6 @@ if __name__ == "__main__":
     import sys, os
     ok = run_tests(verbose=True)
 
-    # Show before/after on the actual DB synthesis
     sys.path.insert(0, ".")
     os.environ.setdefault("DATABASE_PATH", "data/sector_intel.db")
     try:
@@ -212,11 +225,13 @@ if __name__ == "__main__":
                 status = "CHANGED" if raw != cleaned else "no change"
                 print(f"[{field}] {status}")
                 if raw != cleaned:
-                    # Show first diff
-                    for i, (a, b) in enumerate(zip(raw.split(), cleaned.split())):
+                    # Show a sample of the diff
+                    raw_words = raw.split()
+                    clean_words = cleaned.split()
+                    for i, (a, b) in enumerate(zip(raw_words, clean_words)):
                         if a != b:
-                            ctx_r = " ".join(raw.split()[max(0,i-2):i+3])
-                            ctx_c = " ".join(cleaned.split()[max(0,i-2):i+3])
+                            ctx_r = " ".join(raw_words[max(0, i-2):i+4])
+                            ctx_c = " ".join(clean_words[max(0, i-2):i+4])
                             print(f"  BEFORE: ...{ctx_r!r}...")
                             print(f"  AFTER:  ...{ctx_c!r}...")
                             break

@@ -381,11 +381,11 @@ def get_metrics_dataframe(
 ) -> pd.DataFrame:
     """
     Return a long-format DataFrame with columns:
-    [period, metric_name, metric_value, unit, direction]
+    [period, metric_name, metric_value, unit, direction, validated]
     Sorted by period ASC.
     """
     query = """
-        SELECT period, metric_name, metric_value, unit, direction
+        SELECT period, metric_name, metric_value, unit, direction, validated
         FROM metrics
         WHERE company_id = ?
     """
@@ -402,7 +402,7 @@ def get_metrics_dataframe(
         rows = conn.execute(query, params).fetchall()
 
     if not rows:
-        return pd.DataFrame(columns=["period", "metric_name", "metric_value", "unit", "direction"])
+        return pd.DataFrame(columns=["period", "metric_name", "metric_value", "unit", "direction", "validated"])
 
     return pd.DataFrame([dict(r) for r in rows])
 
