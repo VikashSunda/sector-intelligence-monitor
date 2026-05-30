@@ -173,11 +173,16 @@ METRIC_LABELS.update({
 
 # Screener-sourced INR metrics (validated=0 — scraped from Screener.in)
 METRIC_LABELS.update({
-    "revenue_crore":            "Revenue (INR Cr, Screener)",
+    "revenue_crore":            "Revenue (INR Cr)",
     "operating_profit_crore":   "Operating Profit (INR Cr)",
     "opm_pct":                  "Operating Margin (%)",
     "net_profit_crore":         "Net Profit (INR Cr)",
     "eps_inr":                  "EPS (INR)",
+    # US Biotech
+    "revenue_usd":              "Revenue (USD Mn)",
+    "operating_profit_usd":     "Operating Profit (USD Mn)",
+    "net_profit_usd":           "Net Profit (USD Mn)",
+    "eps_usd":                  "EPS (USD)",
 })
 
 # Grouped chart layout: (group_name, [metric_names])
@@ -185,8 +190,8 @@ METRIC_GROUPS = [
     ("Scale",           ["gmv_mn_usd", "gmv_crore", "revenue_mn_usd", "revenue_crore"]),
     ("Users & Devices", ["monthly_transacting_users_mn", "merchant_subscriptions_mn", "devices_deployed_mn"]),
     ("Profitability",   ["ebitda_before_esop_mn_usd", "contribution_profit_mn_usd", "contribution_margin_pct", "net_payment_margin_mn_usd"]),
-    ("P&L — INR Cr (Screener)", ["revenue_crore", "operating_profit_crore", "net_profit_crore", "opm_pct", "eps_inr"]),
-    ("Lending",         ["aum_crore", "gross_npa_pct", "net_npa_pct", "net_interest_margin_pct", "loan_distribution_value_crore"]),
+    ("P&L — Fundamentals", ["revenue_crore", "revenue_usd", "operating_profit_crore", "operating_profit_usd", "net_profit_crore", "net_profit_usd", "opm_pct", "eps_inr", "eps_usd"]),
+    ("Lending / Credit", ["aum_crore", "gross_npa_pct", "net_npa_pct", "net_interest_margin_pct", "loan_distribution_value_crore"]),
 ]
 
 # ─── Fiscal quarter sort key ─────────────────────────────────────────────────
@@ -307,6 +312,18 @@ def _seed_demo_if_empty():
             synthesis_text="CreditAccess Grameen is India's largest microfinance institution. Currently tracking fundamental P&L and asset quality metrics via Screener.in backfill.",
             investing_lens_text="Microfinance leader with rural focus, demonstrating robust asset quality and scale."
         )
+
+    # ── Indian Defence ──
+    if "hal" not in existing_companies:
+        insert_company("hal", "Hindustan Aeronautics Limited", "indian_defence", "HAL", "BSE", "https://hal-india.co.in/Investors")
+    if "bel" not in existing_companies:
+        insert_company("bel", "Bharat Electronics Limited", "indian_defence", "BEL", "BSE", "https://bel-india.in/investor-relations/")
+
+    # ── US Biotech ──
+    if "moderna" not in existing_companies:
+        insert_company("moderna", "Moderna", "us_biotech", "MRNA", "NASDAQ", "https://investors.modernatx.com/")
+    if "gilead" not in existing_companies:
+        insert_company("gilead", "Gilead Sciences", "us_biotech", "GILD", "NASDAQ", "https://investors.gilead.com/")
 
 
 if DB_READY:
@@ -591,6 +608,8 @@ with tab_metrics:
 # Tab 2 — Sector Synthesis
 # ══════════════════════════════════════════════════════════════════════════════
 
+    docs = _get_documents(selected_company_id)
+    
 with tab_synthesis:
     from pipeline.synthesis.text_cleaner import clean_synthesis
     # Look up by company-specific key first, then sector fallback
@@ -605,8 +624,11 @@ with tab_synthesis:
     else:
         generated_at = synthesis.get("generated_at", "")[:16]
         period_range = synthesis.get("period_range", "N/A")
+        
+        # Determine mode
+        synthesis_mode = "Filing-driven" if docs else "Metric-driven"
 
-        st.caption(f"Generated: **{generated_at} UTC** · Period: **{period_range}**")
+        st.caption(f"Generated: **{generated_at} UTC** · Period: **{period_range}** · Mode: **{synthesis_mode}**")
         st.divider()
 
         col1, col2 = st.columns([1, 1], gap="large")
@@ -627,14 +649,19 @@ with tab_synthesis:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_documents:
-    docs = _get_documents(selected_company_id)
-
     if not docs:
-        st.info(
-            "No investor presentations or transcripts have been indexed for this company yet. "
-            "Historical metrics are currently sourced from Screener.in backfill.",
-            icon="📄",
-        )
+        if "us_biotech" in selected_sector:
+            st.info(
+                "No SEC filings have been indexed yet. "
+                "Metrics and synthesis are currently generated from historical financial data sources.",
+                icon="📄",
+            )
+        else:
+            st.info(
+                "No investor presentations or transcripts have been indexed for this company yet. "
+                "Historical metrics are currently sourced from Screener.in backfill.",
+                icon="📄",
+            )
     else:
         st.caption(f"{len(docs)} document(s) indexed")
 

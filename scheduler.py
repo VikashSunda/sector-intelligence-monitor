@@ -61,7 +61,30 @@ SECTOR_COMPANIES = {
             "screener_slug": "CREDITACC",
         },
     ],
-    # extensibility: add indian_defence, us_biotech here without redesign
+    "indian_defence": [
+        {
+            "company_id": "hal",
+            "company_name": "Hindustan Aeronautics Limited",
+            "screener_slug": "HAL",
+        },
+        {
+            "company_id": "bel",
+            "company_name": "Bharat Electronics Limited",
+            "screener_slug": "BEL",
+        },
+    ],
+    "us_biotech": [
+        {
+            "company_id": "moderna",
+            "company_name": "Moderna",
+            "ticker": "MRNA",
+        },
+        {
+            "company_id": "gilead",
+            "company_name": "Gilead Sciences",
+            "ticker": "GILD",
+        },
+    ],
 }
 
 
@@ -114,16 +137,20 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
 
         # ── Phase 2: Discover + download new documents ────────────────────────
         try:
-            from pipeline.ingestion.paytm_fetcher import PaytmFetcher
-            fetcher = PaytmFetcher()
-            fetch_result = fetcher.run(download_pdfs=True)
-            docs_checked += fetch_result.discovered
-            new_docs_found += fetch_result.new_documents
-            logger.info(
-                f"  [{cid}] Fetch: discovered={fetch_result.discovered} "
-                f"new={fetch_result.new_documents} dl={fetch_result.downloaded} "
-                f"bse={'OK' if fetch_result.bse_api_success else 'FALLBACK'}"
-            )
+            if sector in ("indian_fintech", "indian_defence"):
+                # Use generic BSE fetcher for Indian stocks if scrip_code exists
+                # Paytm remains hardcoded fallback inside paytm_fetcher if needed, 
+                # but we'll try the new BSE fetcher first.
+                scrip_code = "543396" if cid == "paytm" else ("543287" if cid == "hal" else ("500049" if cid == "bel" else None))
+                if scrip_code:
+                    from pipeline.ingestion.bse_fetcher import BseFetcher
+                    fetcher = BseFetcher(company_id=cid, scrip_code=scrip_code)
+                    fetch_result = fetcher.run(download_pdfs=True)
+                    docs_checked += fetch_result.discovered
+                    new_docs_found += fetch_result.new_documents
+                    logger.info(f"  [{cid}] BSE Fetch: {fetch_result.discovered} docs")
+            else:
+                logger.info(f"  [{cid}] Fetch: SKIPPED (US Biotech fallback to metric-driven)")
         except Exception as exc:
             msg = f"[{cid}] Fetch error: {exc}"
             logger.error(msg)
@@ -131,10 +158,11 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
 
         # ── Phase 3: Parse all downloaded PDFs ────────────────────────────────
         try:
-            from pipeline.ingestion.pdf_parser import parse_all_pending
-            parse_results = parse_all_pending(cid)
-            total_chunks = sum(r.chunks_extracted for r in parse_results)
-            logger.info(f"  [{cid}] Parse: {len(parse_results)} docs, {total_chunks} chunks")
+            if sector in ("indian_fintech", "indian_defence"):
+                from pipeline.ingestion.pdf_parser import parse_all_pending
+                parse_results = parse_all_pending(cid)
+                total_chunks = sum(r.chunks_extracted for r in parse_results)
+                logger.info(f"  [{cid}] Parse: {len(parse_results)} docs, {total_chunks} chunks")
         except Exception as exc:
             msg = f"[{cid}] Parse error: {exc}"
             logger.error(msg)
@@ -143,19 +171,17 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
         # ── Phase 4: Extract metrics via LLM (skipped if no key) ─────────────
         if has_llm_key:
             try:
-                from pipeline.extraction.metrics_extractor import extract_all_parsed
-                extract_results = extract_all_parsed(
-                    cid,
-                    company_name=cname,
-                    provider=llm_provider,
-                    model=llm_model,
-                    force=False,
-                )
-                newly_extracted = [r for r in extract_results if r.success and not r.was_cached]
-                logger.info(
-                    f"  [{cid}] Extract: {len(newly_extracted)} new, "
-                    f"{sum(1 for r in extract_results if r.was_cached)} cached"
-                )
+                if sector in ("indian_fintech", "indian_defence"):
+                    from pipeline.extraction.metrics_extractor import extract_all_parsed
+                    extract_results = extract_all_parsed(
+                        cid,
+                        company_name=cname,
+                        provider=llm_provider,
+                        model=llm_model,
+                        force=False,
+                    )
+                    newly_extracted = [r for r in extract_results if r.success and not r.was_cached]
+                    logger.info(f"  [{cid}] Extract: {len(newly_extracted)} new")
             except Exception as exc:
                 msg = f"[{cid}] Extract error: {exc}"
                 logger.error(msg)
@@ -163,20 +189,19 @@ def run_refresh(sector: str = "indian_fintech") -> dict:
         else:
             logger.info(f"  [{cid}] Extract: SKIPPED (no LLM API key set)")
 
-        # ── Screener backfill: fill missing historical quarters ───────────────
-        screener_slug = company.get("screener_slug", cid.upper())
+        # ── Phase 5: Backfill historical metrics ──────────────────────────────
         try:
-            from pipeline.ingestion.screener_backfill import backfill_company_historical
-            backfill = backfill_company_historical(
-                company_id=cid,
-                screener_slug=screener_slug,
-            )
-            if backfill["periods_new"]:
-                logger.info(f"  [{cid}] Screener backfill: +{len(backfill['periods_new'])} periods")
+            if sector in ("indian_fintech", "indian_defence"):
+                screener_slug = company.get("screener_slug", cid.upper())
+                from pipeline.ingestion.screener_backfill import backfill_company_historical
+                backfill_company_historical(company_id=cid, screener_slug=screener_slug)
+            elif sector == "us_biotech":
+                ticker = company.get("ticker", cid.upper())
+                from pipeline.ingestion.yfinance_backfill import fetch_yfinance_quarterly
+                fetch_yfinance_quarterly(company_id=cid, ticker=ticker)
         except Exception as exc:
-            msg = f"[{cid}] Screener backfill error: {exc}"
+            msg = f"[{cid}] Backfill error: {exc}"
             logger.warning(msg)
-            # Non-fatal: Screener may be unreachable
 
         # ── Phase 6: Regenerate synthesis (skipped if no key) ─────────────────
         if has_llm_key:
