@@ -117,16 +117,19 @@ st.markdown(
 SECTOR_CONFIG = {
     "indian_fintech": {
         "label": "🏦 Indian Fintech",
+        "icon": ":material/account_balance:",
         "accent": "#6366f1",
         "available": True,
     },
     "indian_defence": {
         "label": "🛡️ Indian Defence",
+        "icon": ":material/shield:",
         "accent": "#f59e0b",
         "available": True,
     },
     "us_biotech": {
         "label": "🧬 US Biotech",
+        "icon": ":material/biotech:",
         "accent": "#10b981",
         "available": True,
     },
@@ -333,7 +336,7 @@ if DB_READY:
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown("## 📊 Sector Intel Monitor")
+    st.markdown("## :material/query_stats: Sector Intelligence")
     st.caption("Early-stage investing intelligence from public filings")
     st.divider()
 
@@ -361,12 +364,12 @@ with st.sidebar:
                 key="company_sel",
             )
         else:
-            st.info("No companies loaded. Run `seed.py` to populate.", icon="ℹ️")
+            st.info("No companies loaded. Run `seed.py` to populate.", icon=":material/info:")
 
     st.divider()
 
     # Refresh section
-    st.markdown("#### 🔄 Data Refresh")
+    st.markdown("#### :material/sync: Data Refresh")
     if DB_READY and is_available:
         synthesis = (
             _get_synthesis(f"{selected_sector}:{selected_company_id}")
@@ -377,7 +380,7 @@ with st.sidebar:
         else:
             st.caption("No synthesis yet.")
 
-        if st.button("▶ Trigger Refresh", type="primary", use_container_width=True):
+        if st.button("Run Refresh", type="primary", use_container_width=True, icon=":material/refresh:"):
             # Clear cached data so fresh results show after refresh
             st.cache_data.clear()
             with st.spinner(f"Refreshing {cfg['label']}…"):
@@ -388,12 +391,12 @@ with st.sidebar:
                     checked = result.get("docs_checked", 0)
                     errs = result.get("errors", [])
                     if errs:
-                        st.warning(f"Completed with {len(errs)} error(s). {new} new docs.", icon="⚠️")
+                        st.warning(f"Completed with {len(errs)} error(s). {new} new docs.", icon=":material/warning:")
                     else:
-                        st.success(f"✅ Done. Checked {checked} docs, found {new} new.")
+                        st.success(f"Done. Checked {checked} docs, found {new} new.")
                     st.rerun()
                 except Exception as exc:
-                    st.error(f"Refresh failed: {exc}")
+                    st.error(f"Refresh failed: {exc}", icon=":material/error:")
 
     # Refresh log
     log = _get_refresh_log(5)
@@ -404,31 +407,32 @@ with st.sidebar:
             ts = entry.get("run_at", "")[:16]
             new = entry.get("new_docs_found", 0)
             errs = entry.get("errors", [])
-            icon = "⚠️" if errs else "✅"
+            icon = ":material/warning:" if errs else ":material/check_circle:"
             st.caption(f"{icon} {ts} · +{new} docs")
 
 
 # ─── Main content ─────────────────────────────────────────────────────────────
 
-st.markdown(f"# {cfg['label']}")
+clean_label = cfg['label'].lstrip("🏦🛡️🧬🛡 ")
+st.markdown(f"# {cfg['icon']} {clean_label}")
 
 # ── Not yet available ─────────────────────────────────────────────────────────
 if not is_available:
     st.info(
-        "🚧 This sector is not yet loaded. **Indian Fintech** is available now.",
-        icon="🚧",
+        "This sector is not yet loaded. **Indian Fintech** is available now.",
+        icon=":material/construction:",
     )
     st.stop()
 
 # ── DB error ──────────────────────────────────────────────────────────────────
 if not DB_READY:
-    st.error(f"Database error: {DB_ERROR}", icon="🚨")
+    st.error(f"Database error: {DB_ERROR}", icon=":material/database_alert:")
     st.code("python -c \"from pipeline.database import init_db; init_db()\"")
     st.stop()
 
 # ── No company selected ───────────────────────────────────────────────────────
 if not selected_company_id:
-    st.info("Select a company from the sidebar to view metrics.", icon="👈")
+    st.info("Select a company from the sidebar to view metrics.", icon=":material/arrow_back:")
     st.stop()
 
 # Company display name
@@ -441,9 +445,12 @@ st.subheader(company_name)
 
 # ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-tab_metrics, tab_synthesis, tab_documents, tab_pipeline = st.tabs(
-    ["📈 Metric Trends", "🧠 Synthesis", "📄 Documents", "⚙️ Pipeline"]
-)
+tab_metrics, tab_synthesis, tab_documents, tab_pipeline = st.tabs([
+    ":material/trending_up: Metric Trends",
+    ":material/psychology: Synthesis",
+    ":material/description: Source Documents",
+    ":material/terminal: Pipeline",
+])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -457,7 +464,7 @@ with tab_metrics:
         st.info(
             "No metrics loaded yet for this company. "
             "Run `python seed.py` or click **Trigger Refresh** to populate.",
-            icon="📭",
+            icon=":material/inbox:",
         )
         st.stop()
 
@@ -474,13 +481,13 @@ with tab_metrics:
             "Operational & payments metrics (USD) cover 5 key quarters "
             "(Q3FY24 – Q4FY25) extracted via **LLM** from investor presentations. "
             "Charts show source: ● Filing / LLM   ○ Screener.in",
-            icon="ℹ️",
+            icon=":material/info:",
         )
     elif _has_screener:
         st.info(
             "**Data Coverage** — Metrics sourced from Screener.in (INR Cr, 13 quarters). "
             "Run the pipeline with an API key to add LLM-extracted operational data.",
-            icon="ℹ️",
+            icon=":material/info:",
         )
 
     # ── KPI summary row ───────────────────────────────────────────────────────
@@ -522,7 +529,15 @@ with tab_metrics:
         available = [m for m in group_metrics if m in df["metric_name"].values]
         if not available:
             continue
-        st.markdown(f"**{group_name}**")
+        group_icons = {
+            "Scale": ":material/scale:",
+            "Users & Devices": ":material/devices:",
+            "Profitability": ":material/payments:",
+            "P&L — Fundamentals": ":material/assessment:",
+            "Lending / Credit": ":material/credit_score:",
+        }
+        g_icon = group_icons.get(group_name, ":material/folder:")
+        st.markdown(f"##### {g_icon} {group_name}")
         cols = st.columns(min(len(available), 2))
         for j, metric in enumerate(available):
             with cols[j % 2]:
@@ -618,8 +633,8 @@ with tab_synthesis:
     if not synthesis:
         st.info(
             "No synthesis generated yet. "
-            "Load metric data first, then click **Trigger Refresh**.",
-            icon="🧠",
+            "Load metric data first, then click Run Refresh.",
+            icon=":material/info:",
         )
     else:
         generated_at = synthesis.get("generated_at", "")[:16]
@@ -628,18 +643,18 @@ with tab_synthesis:
         # Determine mode
         synthesis_mode = "Filing-driven" if docs else "Metric-driven"
 
-        st.caption(f"Generated: **{generated_at} UTC** · Period: **{period_range}** · Mode: **{synthesis_mode}**")
+        st.caption(f":material/schedule: Generated: **{generated_at} UTC** · :material/calendar_today: Period: **{period_range}** · :material/psychology: Mode: **{synthesis_mode}**")
         st.divider()
 
         col1, col2 = st.columns([1, 1], gap="large")
 
         with col1:
-            st.markdown("### 📊 Sector Analysis")
+            st.markdown("### :material/analytics: Sector Analysis")
             raw_analysis = synthesis.get("synthesis_text") or ""
             st.markdown(clean_synthesis(raw_analysis) or "_Not available._")
 
         with col2:
-            st.markdown("### 🎯 Investing Lens")
+            st.markdown("### :material/insights: Investing Lens")
             raw_lens = synthesis.get("investing_lens_text") or ""
             st.markdown(clean_synthesis(raw_lens) or "_Not available._")
 
@@ -654,13 +669,13 @@ with tab_documents:
             st.info(
                 "No SEC filings have been indexed yet. "
                 "Metrics and synthesis are currently generated from historical financial data sources.",
-                icon="📄",
+                icon=":material/article:",
             )
         else:
             st.info(
                 "No investor presentations or transcripts have been indexed for this company yet. "
                 "Historical metrics are currently sourced from Screener.in backfill.",
-                icon="📄",
+                icon=":material/article:",
             )
     else:
         st.caption(f"{len(docs)} document(s) indexed")
@@ -671,19 +686,19 @@ with tab_documents:
             by_type[doc.get("doc_type", "other")].append(doc)
 
         STATUS_ICONS = {
-            "extracted": "✅",
-            "parsed":    "✅",
-            "downloaded":"📥",
-            "indexed":   "🔗",  # URL registered; not downloaded locally (demo mode)
-            "pending":   "⏳",
-            "failed":    "❌",
-            "skipped":   "⏭️",
+            "extracted": ":material/check_circle:",
+            "parsed":    ":material/check_circle:",
+            "downloaded":":material/download:",
+            "indexed":   ":material/link:",  # URL registered; not downloaded locally (demo mode)
+            "pending":   ":material/schedule:",
+            "failed":    ":material/cancel:",
+            "skipped":   ":material/skip_next:",
         }
 
         for doc_type, type_docs in sorted(by_type.items()):
             type_label = doc_type.replace("_", " ").title()
             with st.expander(
-                f"📁 {type_label} ({len(type_docs)})",
+                f":material/folder: {type_label} ({len(type_docs)})",
                 expanded=True,
             ):
                 # Header row
@@ -702,7 +717,7 @@ with tab_documents:
                     c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
                     period = doc.get("period", "—")
                     status = doc.get("parse_status", "pending")
-                    icon = STATUS_ICONS.get(status, "❓")
+                    icon = STATUS_ICONS.get(status, ":material/help:")
                     chunks = doc.get("chunk_count") or 0
                     chunks_display = str(chunks) if chunks > 0 else ("—" if status == "indexed" else "0")
                     url = doc.get("source_url", "#")
@@ -720,7 +735,7 @@ with tab_documents:
 # == Tab 4 — Pipeline ===========================================================
 
 with tab_pipeline:
-    st.markdown("### Run Pipeline")
+    st.markdown("### :material/play_circle: Run Pipeline")
     st.caption("Each step is idempotent. Safe to re-run.")
 
     col_l, col_r = st.columns(2)
@@ -739,7 +754,7 @@ with tab_pipeline:
         st.markdown("5. Generate synthesis (LLM)")
 
     st.markdown("---")
-    if st.button("Run Full Pipeline", type="primary", use_container_width=True, key="pip_run"):
+    if st.button("Run Full Pipeline", type="primary", use_container_width=True, key="pip_run", icon=":material/play_arrow:"):
         if api_key:
             if provider == "claude":
                 os.environ["ANTHROPIC_API_KEY"] = api_key
@@ -793,7 +808,7 @@ with tab_pipeline:
                         if not r.success and r.error:
                             errors.append(f"Extraction error: {r.error}")
                 else:
-                    st.warning("⚠️ Step 4: Extracting metrics skipped (no API key set)")
+                    st.warning("Step 4: Extracting metrics skipped (no API key set)", icon=":material/key_off:")
                     st.write("  Step 4: SKIPPED (no LLM API key set)")
 
                 if has_llm_key:
@@ -807,7 +822,7 @@ with tab_pipeline:
                         st.write(f"  Synthesis skipped: {sr.error}")
                         errors.append(f"Synthesis skipped: {sr.error}")
                 else:
-                    st.warning("⚠️ Step 5: Generating synthesis skipped (no API key set)")
+                    st.warning("Step 5: Generating synthesis skipped (no API key set)", icon=":material/key_off:")
                     st.write("  Step 5: SKIPPED (no LLM API key set)")
 
                 duration = round(time.time() - start_time, 2)
@@ -824,7 +839,7 @@ with tab_pipeline:
                 
                 if not has_llm_key:
                     pip_status.update(label="Pipeline complete (partial)", state="complete")
-                    st.warning("Pipeline completed partially. LLM steps were skipped due to missing API keys.")
+                    st.warning("Pipeline completed partially. LLM steps were skipped due to missing API keys.", icon=":material/warning:")
                 else:
                     pip_status.update(label="Pipeline complete!", state="complete")
                     st.success("Done. Switch to Metrics or Synthesis tabs to see results.")
