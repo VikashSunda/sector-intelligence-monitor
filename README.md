@@ -5,7 +5,7 @@ A multi-sector intelligence platform that automatically collects company data, s
 ## Live Links
 
 * Live Demo: https://sector-intelligence-monitor.onrender.com
-* Loom Demo: [Add Loom URL]
+* Loom Demo: https://www.loom.com/share/01dc8f6abb014dcfb543c373ea1052ab
 * GitHub Repository: https://github.com/VikashSunda/sector-intelligence-monitor
 
 ---
